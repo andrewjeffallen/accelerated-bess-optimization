@@ -1,0 +1,30 @@
+[project]
+name = "accelerated-bess-optimization"
+version = "0.1.0"
+description = "GPU-accelerated BESS optimization benchmark: Pyomo + cuOpt vs Pyomo + HiGHS"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pyomo>=6.10",
+    "highspy",
+    "numpy",
+    "pandas",
+    "matplotlib",
+]
+
+[project.optional-dependencies]
+ercot = ["gridstatus"]
+# cuOpt wheels are Linux (x86-64 / ARM64) only and need an NVIDIA GPU.
+cuda12 = [
+    "nvidia-cuda-runtime-cu12==12.9.*; sys_platform == 'linux'",
+    "cuopt-cu12; sys_platform == 'linux'",
+]
+cuda13 = ["cuopt-cu13; sys_platform == 'linux'"]
+
+[dependency-groups]
+dev = ["nbformat"]
+
+[tool.uv]
+package = false
+# cuda12 and cuda13 pull different builds of the same libraries; never install both.
+conflicts = [[{ extra = "cuda12" }, { extra = "cuda13" }]]
