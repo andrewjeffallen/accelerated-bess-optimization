@@ -14,7 +14,11 @@ GPU-accelerated BESS optimization test & benchmark. A battery price-arbitrage LP
 
 1. Click the **Open in Colab** badge above (or open `bess_cuopt_benchmark.ipynb` via `File -> Open notebook -> GitHub`).
 2. `Runtime -> Change runtime type -> GPU` (T4 is fine).
-3. Run all cells. The notebook installs dependencies and clones this repo.
+3. Run all cells. The notebook installs dependencies and clones this repo, so the real price data comes
+   with it and no credentials are needed.
+
+The notebook defaults to the real HB_NORTH prices plus simulated battery conditions. Set
+`SOURCE = "synthetic"` in the data cell to reproduce the earlier synthetic-price runs.
 
 If you restart the session after installing, re-run from the top.
 
@@ -23,9 +27,13 @@ If you restart the session after installing, re-run from the top.
 This project uses [uv](https://docs.astral.sh/uv/) for package management.
 
 ```bash
-uv sync                      # add --extra ercot for real-price downloads
+uv sync
 uv run python benchmark.py --cpu-only --days 1 7 30 90
 ```
+
+By default this uses the real prices and simulated conditions in `data/`. Useful flags:
+`--no-conditions` (battery always at rated limits), `--source synthetic` (generated prices of any
+length, see `--interval-minutes`), `--repeats N`, `--out results.csv`.
 
 On a Linux machine with an NVIDIA GPU (CUDA 12 or 13, Python 3.11+), sync with the matching
 cuOpt extra and drop `--cpu-only`:
@@ -99,8 +107,9 @@ an output for illustration, not an input to the benchmark.
 ### Synthetic prices
 
 `bess_opt.synthetic_north_hub_prices(n_days, interval_minutes, seed)` generates an ERCOT-like price
-series (solar dip, evening peak, spikes, negative intervals). **It is not real data.** `benchmark.py` and
-the Colab notebook currently use it by default because it can be any length and any interval.
+series (solar dip, evening peak, spikes, negative intervals). **It is not real data.** It is opt-in
+(`--source synthetic` in `benchmark.py`, `SOURCE = "synthetic"` in the notebook) for horizons longer than
+the 731 days of real data or for other time steps. Synthetic runs use no battery conditions.
 
 ### Other model inputs
 
@@ -118,7 +127,9 @@ m = bo.build_model(prices.to_numpy(), bo.infer_dt_hours(prices), conditions=cond
 ```
 
 `build_model` requires `conditions` to have exactly one row per price interval, so slice both to the
-same range.
+same range. The benchmark takes the first N days of both. The conditions file was generated for the
+default 100 MW / 200 MWh battery, so if you change `BatterySpec`, regenerate it with
+`make_data.py telemetry` or run with `--no-conditions`.
 
 ```bash
 uv run python make_data.py telemetry   # rebuild simulated files from the price file, offline
