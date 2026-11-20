@@ -1,5 +1,7 @@
 # accelerated-bess-optimization
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/andrewjeffallen/accelerated-bess-optimization/blob/main/bess_cuopt_benchmark.ipynb)
+
 GPU-accelerated BESS optimization test & benchmark. A battery price-arbitrage LP for
 **ERCOT North Hub (`HB_NORTH`)**, modeled once in Pyomo and solved two ways:
 
@@ -10,7 +12,7 @@ GPU-accelerated BESS optimization test & benchmark. A battery price-arbitrage LP
 
 ## Run it in Google Colab
 
-1. Open `bess_cuopt_benchmark.ipynb` in Colab (`File -> Open notebook -> GitHub`).
+1. Click the **Open in Colab** badge above (or open `bess_cuopt_benchmark.ipynb` via `File -> Open notebook -> GitHub`).
 2. `Runtime -> Change runtime type -> GPU` (T4 is fine).
 3. Run all cells. The notebook installs dependencies and clones this repo.
 
