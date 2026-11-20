@@ -131,8 +131,8 @@ def main() -> None:
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     f = sub.add_parser("fetch", help="download real ERCOT prices")
-    f.add_argument("--start", default="2024-01-01")
-    f.add_argument("--end", default="2025-12-31")
+    f.add_argument("--start", default="2023-12-11", help="earliest date the API returns real-time SPP")
+    f.add_argument("--end", default="2026-11-19")
     f.add_argument("--skip-dam", action="store_true")
     f.add_argument("--skip-rt", action="store_true", help="only (re)fetch day-ahead prices")
     f.set_defaults(func=cmd_fetch)

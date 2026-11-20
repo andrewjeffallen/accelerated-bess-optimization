@@ -40,7 +40,7 @@ cuOpt extra and drop `--cpu-only`:
 
 ```bash
 uv sync --extra cuda12       # CUDA 12.x   (or: uv sync --extra cuda13)
-uv run python benchmark.py --days 1 7 30 90 365 730
+uv run python benchmark.py --days 1 7 30 90 365 730 1074
 ```
 
 ## The model
@@ -54,19 +54,20 @@ Size grows linearly with the horizon: `3 * intervals` variables and `intervals +
 
 ## Dataset overview
 
-All files are small Parquet files in `data/` (about 1.8 MB total), committed to the repo so Colab and
+All files are small Parquet files in `data/` (about 2.5 MB total), committed to the repo so Colab and
 local runs need no credentials. Each file carries a `synthetic` flag and its provenance in the Parquet
 key-value metadata, so real and simulated data can't be mixed up.
 
 | File | Real or simulated | Rows | Used by the LP? |
 |---|---|---|---|
-| `hb_north_rt15.parquet` | **Real**: ERCOT real-time settlement point prices, 15-min | 70,176 | **Yes**: the price signal |
-| `bess_conditions_15min.parquet` | **Simulated** | 70,176 | Optional: time-varying power and energy limits |
-| `hb_north_dam.parquet` | **Real**: ERCOT day-ahead settlement point prices, hourly | 17,544 | No: available for day-ahead vs real-time comparisons |
+| `hb_north_rt15.parquet` | **Real**: ERCOT real-time settlement point prices, 15-min | 103,143 | **Yes**: the price signal |
+| `bess_conditions_15min.parquet` | **Simulated** | 103,143 | Optional: time-varying power and energy limits |
+| `hb_north_dam.parquet` | **Real**: ERCOT day-ahead settlement point prices, hourly | 25,752 | No: available for day-ahead vs real-time comparisons |
 | `bess_telemetry_1min_sample.parquet` | **Simulated** | 10,080 | No: a demo of what plant telemetry could look like (docs/telemetry_sample.png) |
 
-All files cover 2024-01-01 to 2025-12-31 (731 days, 2024 is a leap year), are indexed by interval
-start, and use tz-aware `America/Chicago` timestamps.
+The real-time prices and the conditions cover 2023-12-11 14:15 to 2026-11-19 23:45 (1,074 full days;
+the API returns no real-time prices before 2023-12-11). The day-ahead prices cover 2023-12-13 00:00 to
+2026-11-19 23:00. All files are indexed by interval start and use tz-aware `America/Chicago` timestamps.
 
 ### Real data: ERCOT prices
 
@@ -77,14 +78,15 @@ start, and use tz-aware `America/Chicago` timestamps.
   source and linearly interpolated).
 - **Cleaning** (`ercot_api.py`): ERCOT's local interval times are converted to tz-aware timestamps using
   its `DSTFlag` (so the repeated fall-back hour is handled), then put on a complete regular grid.
-  Gaps of up to 60 minutes are interpolated and flagged. Longer gaps raise an error. The real-time file has
-  1 filled interval and the day-ahead file has none. There are no nulls or duplicate timestamps.
-- **Values:** real-time prices run from about -$66 to $4,965/MWh (mean about $29). Day-ahead prices run from -$4
-  to $2,225/MWh (mean $30). Spikes and negative prices are real and are what the battery arbitrages.
+  Gaps of up to 60 minutes are interpolated and flagged. Longer gaps raise an error. Rows the API repeats
+  verbatim are dropped (a repeat with a different price still raises). The real-time file has 4 filled
+  intervals out of 103,143 and the day-ahead file has none. There are no nulls or duplicate timestamps.
+- **Values:** real-time prices run from about -$72 to $4,965/MWh (mean about $30). Day-ahead prices run
+  from -$6 to $2,225/MWh (mean $31). Spikes and negative prices are real and are what the battery arbitrages.
 - **How it is used:** price is the only objective coefficient. The LP maximizes
   `sum(price[t] * (discharge[t] - charge[t]) * dt)` minus the throughput cost. The time step `dt` is
   inferred from the price index (0.25 h), so the price file also sets the problem size
-  (`3 * rows` variables, about 210k for the full 731 days).
+  (`3 * rows` variables, about 309k for the full 1,074 days).
 
 ### Simulated data: battery conditions
 
@@ -109,7 +111,7 @@ an output for illustration, not an input to the benchmark.
 `bess_opt.synthetic_north_hub_prices(n_days, interval_minutes, seed)` generates an ERCOT-like price
 series (solar dip, evening peak, spikes, negative intervals). **It is not real data.** It is opt-in
 (`--source synthetic` in `benchmark.py`, `SOURCE = "synthetic"` in the notebook) for horizons longer than
-the 731 days of real data or for other time steps. Synthetic runs use no battery conditions.
+the 1,074 days of real data or for other time steps. Synthetic runs use no battery conditions.
 
 ### Other model inputs
 
@@ -134,7 +136,7 @@ default 100 MW / 200 MWh battery, so if you change `BatterySpec`, regenerate it 
 ```bash
 uv run python make_data.py telemetry   # rebuild simulated files from the price file, offline
 # Re-download real prices (needs ERCOT_USERNAME, ERCOT_PASSWORD, ERCOT_API_KEY in the environment):
-uv run python make_data.py fetch --start 2024-01-01 --end 2025-12-31
+uv run python make_data.py fetch --start 2023-12-11 --end 2026-11-19
 ```
 
 ### Caveats

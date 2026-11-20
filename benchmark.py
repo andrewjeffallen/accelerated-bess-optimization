@@ -5,7 +5,7 @@
     python benchmark.py --source synthetic --days 1 7 30 90 365 --interval-minutes 15
     python benchmark.py --cpu-only                       # no GPU needed
 
-`--source real` (default) reads data/hb_north_rt15.parquet (731 days of 15-min prices) and
+`--source real` (default) reads data/hb_north_rt15.parquet (1,074 days of 15-min prices) and
 data/bess_conditions_15min.parquet. See the README's Dataset overview.
 """
 
@@ -142,7 +142,7 @@ def plot_dispatch(prices: pd.Series, dispatch: pd.DataFrame, title: str = "Optim
 
 def load_inputs(
     source: str = "real",
-    max_days: int = 730,
+    max_days: int = 1074,
     use_conditions: bool = True,
     interval_minutes: int = 15,
     seed: int = 0,
@@ -162,7 +162,7 @@ def load_inputs(
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--source", choices=["real", "synthetic"], default="real")
-    ap.add_argument("--days", type=int, nargs="+", default=[1, 7, 30, 90, 365, 730])
+    ap.add_argument("--days", type=int, nargs="+", default=[1, 7, 30, 90, 365, 730, 1074])
     ap.add_argument("--no-conditions", action="store_true",
                     help="real source only: ignore simulated derates/outages/fade")
     ap.add_argument("--interval-minutes", type=int, default=15, help="synthetic data only")

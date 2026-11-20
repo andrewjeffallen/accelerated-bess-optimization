@@ -146,6 +146,7 @@ def _finish(ts: pd.DatetimeIndex, price: pd.Series, step_minutes: int) -> pd.Dat
 
 def rt_spp_to_frame(df: pd.DataFrame) -> pd.DataFrame:
     """RT 15-min SPP rows -> DataFrame[price_usd_mwh, is_filled] indexed by interval start."""
+    df = df.drop_duplicates()  # the API occasionally repeats a row verbatim; conflicting repeats still raise
     start = (
         pd.to_datetime(df["deliveryDate"])
         + pd.to_timedelta(df["deliveryHour"].astype(int) - 1, unit="h")
@@ -156,6 +157,7 @@ def rt_spp_to_frame(df: pd.DataFrame) -> pd.DataFrame:
 
 def dam_spp_to_frame(df: pd.DataFrame) -> pd.DataFrame:
     """DAM hourly SPP rows -> DataFrame[price_usd_mwh, is_filled] indexed by hour start."""
+    df = df.drop_duplicates()  # same guard as rt_spp_to_frame
     hour_ending = df["hourEnding"].str.slice(0, 2).astype(int)
     start = pd.to_datetime(df["deliveryDate"]) + pd.to_timedelta(hour_ending - 1, unit="h")
     return _finish(_localize(start, df["DSTFlag"]), df["settlementPointPrice"], 60)
