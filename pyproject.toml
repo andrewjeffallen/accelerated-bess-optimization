@@ -15,7 +15,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-ercot = ["gridstatus"]
 # cuOpt wheels are Linux (x86-64 / ARM64) only and need an NVIDIA GPU.
 cuda12 = [
     "nvidia-cuda-runtime-cu12==12.9.*; sys_platform == 'linux'",
