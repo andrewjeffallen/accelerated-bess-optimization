@@ -225,3 +225,6 @@ __marimo__/
 # Benchmark outputs
 benchmark_results.csv
 benchmark_results.png
+
+# Raw ERCOT API pulls
+.cache/

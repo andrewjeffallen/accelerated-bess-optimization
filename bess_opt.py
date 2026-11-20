@@ -5,9 +5,12 @@ a CPU solver (HiGHS) or NVIDIA cuOpt (GPU), so the two can be compared fairly.
 
     max  sum_t  price[t] * (d[t] - c[t]) * dt  -  throughput_cost * (c[t] + d[t]) * dt
     s.t. soc[t] = soc[t-1] + dt * (eta_c * c[t] - d[t] / eta_d)
-         0 <= c[t], d[t] <= power_mw
-         soc_min <= soc[t] <= soc_max
+         0 <= c[t], d[t] <= available_mw[t]          (rated power if no telemetry)
+         soc_min_frac * usable[t] <= soc[t] <= soc_max_frac * usable[t]
          soc[-1] = soc_init,  soc[T-1] >= soc_init   (no free energy at end of horizon)
+
+`available_mw[t]` and `usable[t]` come from simulated telemetry (see telemetry.py):
+derates, outages and capacity fade. Prices are real ERCOT HB_NORTH settlement point prices.
 
 The LP has no binary "charge XOR discharge" variable. With the throughput cost and
 round-trip losses, simultaneous charge/discharge is never profitable at positive
@@ -18,6 +21,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -77,40 +81,25 @@ def synthetic_north_hub_prices(
 
     price = np.clip(price, -250.0, 5000.0)
     idx = pd.date_range(
-        "2024-01-01", periods=n, freq=f"{interval_minutes}min", tz="US/Central"
+        "2024-01-01", periods=n, freq=f"{interval_minutes}min", tz="America/Chicago"
     )
     return pd.Series(price, index=idx, name="HB_NORTH_synthetic")
 
 
-def load_prices_csv(path: str, time_col: str, price_col: str) -> pd.Series:
-    """Load a price series from a CSV (e.g. downloaded from ERCOT or gridstatus.io)."""
-    df = pd.read_csv(path, parse_dates=[time_col])
-    return df.set_index(time_col)[price_col].sort_index().rename("HB_NORTH")
+DATA_DIR = Path(__file__).parent / "data"
+RT15_PATH = DATA_DIR / "hb_north_rt15.parquet"  # real ERCOT HB_NORTH, 15-min
+DAM_PATH = DATA_DIR / "hb_north_dam.parquet"  # real ERCOT HB_NORTH, hourly
+CONDITIONS_PATH = DATA_DIR / "bess_conditions_15min.parquet"  # SIMULATED, see telemetry.py
 
 
-def load_ercot_north_hub(start: str, end: str, market: str = "RT15") -> pd.Series:
-    """Real HB_NORTH settlement point prices via the `gridstatus` package.
+def load_prices_parquet(path: str | Path = RT15_PATH) -> pd.Series:
+    """Real HB_NORTH settlement point prices ($/MWh) from the repo's Parquet files."""
+    return pd.read_parquet(path)["price_usd_mwh"].rename("HB_NORTH")
 
-    market: "RT15" (real-time 15-min SPP) or "DAM" (day-ahead hourly SPP).
-    Raises on failure so callers can fall back to synthetic data explicitly.
-    """
-    import gridstatus  # imported lazily so it stays an optional dependency
 
-    markets = {
-        "RT15": gridstatus.Markets.REAL_TIME_15_MIN,
-        "DAM": gridstatus.Markets.DAY_AHEAD_HOURLY,
-    }
-    df = gridstatus.Ercot().get_spp(
-        date=start,
-        end=end,
-        market=markets[market],
-        locations=["HB_NORTH"],
-        location_type="Trading Hub",
-    )
-    if df is None or len(df) == 0:
-        raise RuntimeError("gridstatus returned no HB_NORTH rows")
-    time_col = "Interval Start" if "Interval Start" in df.columns else "Time"
-    return df.set_index(time_col)["SPP"].sort_index().rename("HB_NORTH")
+def load_conditions_parquet(path: str | Path = CONDITIONS_PATH) -> pd.DataFrame:
+    """SIMULATED battery conditions: ambient_temp_c, available_mw, usable_energy_mwh."""
+    return pd.read_parquet(path)
 
 
 def infer_dt_hours(prices: pd.Series) -> float:
@@ -121,19 +110,33 @@ def infer_dt_hours(prices: pd.Series) -> float:
 # Pyomo model
 # --------------------------------------------------------------------------- #
 def build_model(
-    prices: np.ndarray, dt_hours: float, spec: BatterySpec = BatterySpec()
+    prices: np.ndarray,
+    dt_hours: float,
+    spec: BatterySpec = BatterySpec(),
+    conditions: pd.DataFrame | None = None,
 ) -> pyo.ConcreteModel:
+    """`conditions` (optional) must have one row per price interval with columns
+    `available_mw` and `usable_energy_mwh`; without it the battery is always at
+    rated power and nameplate energy."""
     prices = np.asarray(prices, dtype=float)
     n = len(prices)
-    e_min = spec.soc_min_frac * spec.energy_mwh
-    e_max = spec.soc_max_frac * spec.energy_mwh
+    if conditions is None:
+        p_max = np.full(n, spec.power_mw)
+        usable = np.full(n, spec.energy_mwh)
+    else:
+        if len(conditions) != n:
+            raise ValueError(f"conditions has {len(conditions)} rows, prices has {n}")
+        p_max = conditions["available_mw"].to_numpy(dtype=float)
+        usable = conditions["usable_energy_mwh"].to_numpy(dtype=float)
+    e_min = spec.soc_min_frac * usable
+    e_max = spec.soc_max_frac * usable
     e_init = spec.soc_init_frac * spec.energy_mwh
 
     m = pyo.ConcreteModel("bess_arbitrage")
     m.T = pyo.RangeSet(0, n - 1)
-    m.charge = pyo.Var(m.T, bounds=(0, spec.power_mw))
-    m.discharge = pyo.Var(m.T, bounds=(0, spec.power_mw))
-    m.soc = pyo.Var(m.T, bounds=(e_min, e_max))
+    m.charge = pyo.Var(m.T, bounds=lambda m, t: (0, p_max[t]))
+    m.discharge = pyo.Var(m.T, bounds=lambda m, t: (0, p_max[t]))
+    m.soc = pyo.Var(m.T, bounds=lambda m, t: (e_min[t], e_max[t]))
 
     def soc_balance(m, t):
         prev = e_init if t == 0 else m.soc[t - 1]
